@@ -66,7 +66,7 @@ And once inside, verify the following things in turn:
 
 Try `squeue` on `controller`.  It should print an empty table with just the header row.
 
-Try submitting an sbatch.  **Beware: the home directory is not networked!** (and currently cannot be without causing SSH troubles).
+Try submitting an sbatch.  **Beware: the home directory is not networked!** (and currently cannot be without causing SSH troubles).  For best results, do things in `~/data`.  Networked directories are defined in `common-defs.rb`, if you need to add more.
 
 ### Making a box with installed packages
 

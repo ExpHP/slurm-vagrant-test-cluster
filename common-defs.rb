@@ -24,17 +24,21 @@
     :primary_host => "controller",
 }
 
-def setup_vagrant_dir(config)
+def sync_dir(config, a, b)
   # default options are vers=3,udp.  On my archlinux machine this results in
   #    mount.nfs: requested NFS version or transport protocol is not supported
   # during vagrant up.
   #
   # The following flags are from jandrom's vagrantfile.
   config.vm.synced_folder(
-    ".", "/vagrant",
+    a, b,
     type: "nfs",
     mount_options: ['rw', 'vers=3', 'tcp', 'fsc', 'actimeo=1'],
   )
+end
+
+def setup_vagrant_dir(config)
+  sync_dir(config, ".", "/vagrant")
 end
 
 def make_cluster(config)
@@ -53,4 +57,6 @@ def make_cluster(config)
       config.vm.network "private_network", ip: ip
     end
   end
+  sync_dir(config, "./sync/tmp", "/tmp")
+  sync_dir(config, "./sync/data", "/home/vagrant/data")
 end
