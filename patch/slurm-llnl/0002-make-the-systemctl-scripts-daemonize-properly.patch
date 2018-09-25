@@ -1,0 +1,81 @@
+From 4aa9cd12cb718a3e6c395b8da8920e30a74a8712 Mon Sep 17 00:00:00 2001
+From: Michael Lamparski <diagonaldevice@gmail.com>
+Date: Mon, 24 Sep 2018 14:32:13 -0400
+Subject: [PATCH 2/2] make the systemctl scripts daemonize properly
+
+slurm should be run by the slurm user, and should not have
+Type=forking because it confuses systemctl, causing 'systemctl start'
+to block and eventually timeout (even though slurm starts successfully
+during this time).
+
+Slurm's -D flag and Type=simple go well together.
+---
+ slurm-llnl-default-conf | 6 +++---
+ slurmctld.service       | 3 ++-
+ slurmd.service          | 2 +-
+ slurmdbd.service        | 2 +-
+ 4 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/slurm-llnl-default-conf b/slurm-llnl-default-conf
+index 13ade04..6b80141 100644
+--- a/slurm-llnl-default-conf
++++ b/slurm-llnl-default-conf
+@@ -5,12 +5,12 @@
+ # This is a POSIX shell fragment
+ #
+ # Additional options that are passed to the slurmctld daemon
+-#SLURMCTLD_OPTIONS=""
++SLURMCTLD_OPTIONS="-D"
+ 
+ 
+ # Additional options that are passed to the slurmd daemon
+-#SLURMD_OPTIONS=""
++SLURMD_OPTIONS="-D"
+ 
+ 
+ # Additional options that are passed to the slurmdbd daemon
+-#SLURMDBD_OPTIONS=""
++SLURMDBD_OPTIONS="-D"
+diff --git a/slurmctld.service b/slurmctld.service
+index a56d39c..b870cce 100644
+--- a/slurmctld.service
++++ b/slurmctld.service
+@@ -5,7 +5,8 @@ Requires=munge.service
+ ConditionPathExists=/etc/slurm-llnl/slurm.conf
+ 
+ [Service]
+-Type=forking
++User=slurm
++Type=simple
+ EnvironmentFile=-/etc/default/slurm-llnl
+ ExecStart=/usr/bin/slurmctld $SLURMCTLD_OPTIONS
+ ExecReload=/bin/kill -HUP $MAINPID
+diff --git a/slurmd.service b/slurmd.service
+index 4b43e5f..c3a6cd3 100644
+--- a/slurmd.service
++++ b/slurmd.service
+@@ -5,7 +5,7 @@ Requires=munge.service
+ ConditionPathExists=/etc/slurm-llnl/slurm.conf
+ 
+ [Service]
+-Type=forking
++Type=simple
+ EnvironmentFile=-/etc/default/slurm-llnl
+ ExecStart=/usr/bin/slurmd $SLURMD_OPTIONS
+ ExecReload=/bin/kill -HUP $MAINPID
+diff --git a/slurmdbd.service b/slurmdbd.service
+index a46e39f..636abed 100644
+--- a/slurmdbd.service
++++ b/slurmdbd.service
+@@ -4,7 +4,7 @@ After=network.target mysqld.service
+ ConditionPathExists=/etc/slurm-llnl/slurmdbd.conf
+ 
+ [Service]
+-Type=forking
++Type=simple
+ EnvironmentFile=-/etc/default/slurm-llnl
+ ExecStart=/usr/bin/slurmdbd $SLURMDBD_OPTIONS
+ ExecReload=/bin/kill -HUP $MAINPID
+-- 
+2.19.0
+

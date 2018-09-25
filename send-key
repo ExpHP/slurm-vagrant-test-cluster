@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+# send-key: Used by one of the provisioning scripts to get passwordless-login
+#           working across all of the nodes.
+spawn ssh-copy-id $argv
+expect "(yes/no)?"
+send "yes\n"
+expect "password:"
+send "vagrant\n"
+expect eof

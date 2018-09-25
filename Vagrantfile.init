@@ -1,0 +1,24 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Vagrantfile that installs deps onto a single base image. Use save-box afterwards
+# to save the image, then use Vagrantfile.fast to reap the rewards.
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+require_relative 'common-defs'
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.box = "archlinux/archlinux"
+  config.vm.provision "shell", env: @env_vars, inline: <<~SCRIPT
+    if [[ ! -e /etc/.deps-installed ]]; then
+      /vagrant/bootstrap/install-deps.sh
+      /vagrant/bootstrap/prepare-for-packaging.sh
+
+      touch /etc/.deps-installed
+    fi
+  SCRIPT
+
+  setup_vagrant_dir(config)
+end

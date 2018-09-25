@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# ./use -- because getting the arguments to 'ln -sf' in the wrong order kinda sucks
+
+[[ ! $1 || $1 == --help ]] && {
+  echo >&2 "usage: ./use [full|init|fast|debug-pkg]"
+  echo >&2 "sets up a symlink for Vagrantfile. See README.md for more details"
+  [[ $1 == --help ]]; exit $?
+}
+
+# Some of the Vagrantfiles use different hostnames, and 'vagrant destroy' will
+# always try to take down domains corresponding to the current Vagrantfile.
+#
+# Therefore, it is important to do 'vagrant destroy' BEFORE switching Vagrantfiles!
+[[ -e Vagrantfile ]] && {
+  echo "Taking down any remaining libvirt domains..."
+  vagrant destroy -f
+}
+
+echo "Using Vagrantfile.$1"
+ln -sf Vagrantfile.$1 Vagrantfile

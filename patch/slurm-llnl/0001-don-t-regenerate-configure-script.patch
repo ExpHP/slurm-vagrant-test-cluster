@@ -1,0 +1,27 @@
+From ec4ce24e5b55fb65a37a046ad2bf29f22c901fd4 Mon Sep 17 00:00:00 2001
+From: Michael Lamparski <diagonaldevice@gmail.com>
+Date: Mon, 24 Sep 2018 14:28:38 -0400
+Subject: [PATCH 1/2] don't regenerate configure script
+
+Something must be very broken in slurm's configure.ac, because
+it generates a configure script with invalid syntax.  However,
+they already supply a configure script, so....
+---
+ PKGBUILD | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/PKGBUILD b/PKGBUILD
+index 91484de..e2aafad 100644
+--- a/PKGBUILD
++++ b/PKGBUILD
+@@ -61,7 +61,6 @@ build() {
+ 	export CFLAGS="${CFLAGS//-fno-plt/}"
+ 	export LDFLAGS="${LDFLAGS//-z,now/-z,lazy}"
+ 
+-	./autogen.sh
+ 	./configure \
+ 		--prefix=/usr \
+ 		--sbindir=/usr/bin \
+-- 
+2.19.0
+

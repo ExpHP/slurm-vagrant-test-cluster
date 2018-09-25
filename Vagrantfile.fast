@@ -1,0 +1,24 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Vagrantfile for creating a cluster with an image saved from Vagrantfile.init.
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+require_relative 'common-defs'
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  config.vm.box = "cluster-fast"
+  config.vm.provision "shell", env: @env_vars, inline: <<~SCRIPT
+    if [[ ! -e /etc/.provisioned ]]; then
+      /vagrant/bootstrap/config.sh
+
+      touch /etc/.provisioned
+    fi
+  SCRIPT
+
+  make_cluster(config)
+
+  setup_vagrant_dir(config)
+end

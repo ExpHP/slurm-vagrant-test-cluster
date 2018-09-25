@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+[[ $1 == --keep ]] && KEEP=1
+
+# image location
+IMG_FILE=/var/lib/libvirt/images/cluster2_default.img
+#IMG_FILE=SAVED.img
+
+# where to install the box
+BOX_NAME=cluster-fast
+BOX_VER=0
+
+LIBVIRT_POOL=default
+LIBVIRT_VOLUME=$(echo "${BOX_NAME}_vagrant_box_image_${BOX_VER}.img" | sed s_/_-VAGRANTSLASH-_g)
+set -x
+
+cd $(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+
+if sudo virsh vol-list $LIBVIRT_POOL | fgrep "$LIBVIRT_VOLUME"; then
+    set +x
+    # 'vagrant box add --force' isn't good enough;
+    # it will "install" the new box, but vagrant won't replace the existing volume
+    # stored by libvirt. This leads to much confusion and sadness.
+    echo >&2 "This box or its associated libvirt volume is already installed!"
+    echo >&2 "Please remove these artifacts and try again."
+    echo >&2 "Try:"
+    echo >&2 "  vagrant box remove ${BOX_NAME}"
+    echo >&2 "  sudo virsh vol-delete ${LIBVIRT_VOLUME} --pool=${LIBVIRT_POOL}"
+    exit 1
+fi
+
+[[ -e $IMG_FILE ]] || {
+    set +x
+    echo >&2 "$IMG_FILE not found!"
+    echo >&2 "Please make sure the 'init' Vagrantfile is up and running!"
+    exit 1
+}
+sudo cp $IMG_FILE ${BOX_NAME}.qcow2
+sudo chown $USER ${BOX_NAME}.qcow2
+
+# If you look at the image now, you'll see that it is stored as some sort of "diff"
+# against the original image:
+#
+# $ qemu-img info img.qcow2
+# image: img.qcow2
+# file format: qcow2
+# virtual size: 20G (21474836480 bytes)
+# disk size: 2.5G
+# cluster_size: 65536
+# backing file: /var/lib/libvirt/images/archlinux-VAGRANTSLASH-archlinux_vagrant_box_image_2018.09.05.img
+# backing file format: qcow2
+# Format specific information:
+#     compat: 0.10
+#     refcount bits: 16
+
+# If you try to just pack this up as-is, it will get corrupted when vagrant unpacks it.
+# We can normalize it by passing through the raw format.
+#
+# $ qemu-img info img.qcow2
+# image: img.qcow2
+# file format: qcow2
+# virtual size: 20G (21474836480 bytes)
+# disk size: 3.4G
+# cluster_size: 65536
+# Format specific information:
+#     compat: 1.1
+#     lazy refcounts: false
+#     refcount bits: 16
+#     corrupt: false
+#
+# This looks pretty good! Peeking at the file in a binary editor
+# also shows promising similarities to the archlinux/archlinux box.img.
+
+qemu-img convert -f qcow2 -O raw ${BOX_NAME}.qcow2 ${BOX_NAME}.raw || exit 1
+qemu-img convert -f raw -O qcow2 ${BOX_NAME}.raw ${BOX_NAME}.qcow2 || exit 1
+rm ${BOX_NAME}.raw # save those gigabytes!
+
+# libvirt support comes from a plugin and is not built into vagrant, so we can't use
+# builtin commands for packaging.  Thankfully, the box format is pretty simple.
+mv ${BOX_NAME}.qcow2 box.img
+tar -czf ${BOX_NAME}.box ./metadata.json ./Vagrantfile ./box.img || exit 1
+rm box.img
+
+vagrant box add --name ${BOX_NAME} ${BOX_NAME}.box || exit 1
+[[ $KEEP ]] || rm ${BOX_NAME}.box
+

@@ -1,0 +1,6 @@
+munge.key
+save-box/*.box
+.vagrant/
+
+# symlink to one of the other Vagrantfiles
+Vagrantfile
