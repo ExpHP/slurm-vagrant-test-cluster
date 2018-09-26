@@ -1,43 +1,92 @@
 #!/usr/bin/env bash
 
+PROG=$(basename "${BASH_SOURCE[0]}")
+
+# FIXME getopt
 [[ $1 == --keep ]] && KEEP=1
 
-# image location
-IMG_FILE=/var/lib/libvirt/images/cluster2_default.img
-#IMG_FILE=SAVED.img
+#-----------------------------------------------------
+# SETUP/CONFIG
+
+vagrant_escape() {
+    sed s_/_-VAGRANTSLASH-_g
+}
 
 # where to install the box
-BOX_NAME=cluster-fast
-BOX_VER=0
+[[ $BOX_NAME ]] || BOX_NAME=cluster-fast
+BOX_VER=0 # I don't know how you can set this during `vagrant box add`.
+          # --box-version is only for setting constraints.
 
-LIBVIRT_POOL=default
-LIBVIRT_VOLUME=$(echo "${BOX_NAME}_vagrant_box_image_${BOX_VER}.img" | sed s_/_-VAGRANTSLASH-_g)
+# find where vagrant keeps the image for the running machine
+[[ $VAGRANT_MACHINE ]] || VAGRANT_MACHINE=default
+[[ $LIBVIRT_IMG_ROOT ]] || LIBVIRT_IMG_ROOT=/var/lib/libvirt/images
+if ! [[ $CLUSTER_DIR ]]; then
+    # vagrant names its libvirt images after the directory containing the Vagrantfile.
+    # (FIXME: can we override that behavior?)
+    path=$(readlink -f "${BASH_SOURCE[0]}")
+    CLUSTER_DIR=$(dirname "$(dirname "$path")")
+    if ! [[ -e $CLUSTER_DIR/Vagrantfile ]]; then
+        echo >&2 "$PROG: internal error: cannot find root directory of cluster."
+        exit 1
+    fi
+fi
+SRC_LIBVIRT_DOMAIN=$(basename "$CLUSTER_DIR")_$VAGRANT_MACHINE
+SRC_IMG_FILE=$LIBVIRT_IMG_ROOT/${SRC_LIBVIRT_DOMAIN}.img
+
+# find where the vagrant will put the image for the installed box
+DEST_LIBVIRT_POOL=default
+DEST_LIBVIRT_VOLUME=$(echo "${BOX_NAME}_vagrant_box_image_${BOX_VER}.img" | vagrant_escape)
+
+#-----------------------------------------------------
+# ADDITIONAL DIAGNOSTICS
+
+#-------------------
+# Source machine must be shut off.
+
+if [[ $(sudo virsh domstate $SRC_LIBVIRT_DOMAIN) != "shut off" ]]; then
+    echo >&2 "$PROG: Unable to verify that the libvirt domain $SRC_LIBVIRT_DOMAIN exists and is shut off"
+    echo >&2 "$PROG: Please try:   vagrant up; vagrant halt"
+    exit 1
+fi
+
+#-------------------
+# The previously existing libvirt image for the box must be removed.
+#
+# This is actually a very confusing aspect of vagrant that made me waste hours.
+# It lazily uploads the images from `~/.vagrant.d/boxes` to libvirt storage when
+#  you do 'vagrant up' and an image is not already there.
+#
+# Basically, this means 'vagrant box add --force' is insufficient;
+# you must find the old libvirt image and delete it yourself.
+# Even 'vagrant box remove' does not do this for you.
+
+# FIXME: Ideal search pattern would be the regex  "^$BOX_NAME " (space included)
+#        so that we only get exact matches, but then we would have to escape
+#        metacharacters in $BOX_NAME.
+{ vagrant box list | fgrep "$BOX_NAME " >/dev/null 2>&1; } && box_is_installed=1
+{ sudo virsh vol-list "$DEST_LIBVIRT_POOL" | fgrep "$DEST_LIBVIRT_VOLUME" >/dev/null 2>&1; } && vol_is_installed=1
+
+if [[ $box_is_installed || $vol_is_installed ]]; then
+    echo >&2 "This box or its associated libvirt volume is already installed!"
+    echo >&2 "Please remove these artifacts and try again."
+    echo >&2 "Try:"
+    [[ $box_is_installed ]] && echo >&2 "  vagrant box remove ${BOX_NAME}"
+    [[ $vol_is_installed ]] && echo >&2 "  sudo virsh vol-delete ${DEST_LIBVIRT_VOLUME} --pool=${DEST_LIBVIRT_POOL}"
+    exit 1
+fi
+
+#-----------------------------------------------------
+# PHASE 2: DO THE THING
+
 set -x
 
 cd $(dirname $(readlink -f "${BASH_SOURCE[0]}"))
 
-if sudo virsh vol-list $LIBVIRT_POOL | fgrep "$LIBVIRT_VOLUME"; then
-    set +x
-    # 'vagrant box add --force' isn't good enough;
-    # it will "install" the new box, but vagrant won't replace the existing volume
-    # stored by libvirt. This leads to much confusion and sadness.
-    echo >&2 "This box or its associated libvirt volume is already installed!"
-    echo >&2 "Please remove these artifacts and try again."
-    echo >&2 "Try:"
-    echo >&2 "  vagrant box remove ${BOX_NAME}"
-    echo >&2 "  sudo virsh vol-delete ${LIBVIRT_VOLUME} --pool=${LIBVIRT_POOL}"
-    exit 1
-fi
+sudo cp "$SRC_IMG_FILE" ${BOX_NAME}.qcow2 || exit 1
+sudo chown $USER ${BOX_NAME}.qcow2 || exit 1
 
-[[ -e $IMG_FILE ]] || {
-    set +x
-    echo >&2 "$IMG_FILE not found!"
-    echo >&2 "Please make sure the 'init' Vagrantfile is up and running!"
-    exit 1
-}
-sudo cp $IMG_FILE ${BOX_NAME}.qcow2
-sudo chown $USER ${BOX_NAME}.qcow2
-
+# Silly conversion hack.
+#
 # If you look at the image now, you'll see that it is stored as some sort of "diff"
 # against the original image:
 #
@@ -52,7 +101,7 @@ sudo chown $USER ${BOX_NAME}.qcow2
 # Format specific information:
 #     compat: 0.10
 #     refcount bits: 16
-
+#
 # If you try to just pack this up as-is, it will get corrupted when vagrant unpacks it.
 # We can normalize it by passing through the raw format.
 #
@@ -67,10 +116,6 @@ sudo chown $USER ${BOX_NAME}.qcow2
 #     lazy refcounts: false
 #     refcount bits: 16
 #     corrupt: false
-#
-# This looks pretty good! Peeking at the file in a binary editor
-# also shows promising similarities to the archlinux/archlinux box.img.
-
 qemu-img convert -f qcow2 -O raw ${BOX_NAME}.qcow2 ${BOX_NAME}.raw || exit 1
 qemu-img convert -f raw -O qcow2 ${BOX_NAME}.raw ${BOX_NAME}.qcow2 || exit 1
 rm ${BOX_NAME}.raw # save those gigabytes!
@@ -78,8 +123,9 @@ rm ${BOX_NAME}.raw # save those gigabytes!
 # libvirt support comes from a plugin and is not built into vagrant, so we can't use
 # builtin commands for packaging.  Thankfully, the box format is pretty simple.
 mv ${BOX_NAME}.qcow2 box.img
+cp files/{metadata.json,Vagrantfile} . # Vagrantfile is tucked away here to avoid confusion
 tar -czf ${BOX_NAME}.box ./metadata.json ./Vagrantfile ./box.img || exit 1
-rm box.img
+rm metadata.json Vagrantfile box.img
 
 vagrant box add --name ${BOX_NAME} ${BOX_NAME}.box || exit 1
 [[ $KEEP ]] || rm ${BOX_NAME}.box
