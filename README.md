@@ -111,15 +111,15 @@ vagrant up
 vagrant halt
 
 save-box/save-box
-
-# A vagrantfile that creates a cluster with nothing installed,
-# using the box saved from debug-pkg
-./use debug-up
 ```
 
 To verify that everything is good,
 
 ```
+# A vagrantfile that creates a cluster with nothing installed,
+# using the box saved from debug-pkg
+./use debug-up
+
 vagrant up
 vagrant ssh controller
 ```
