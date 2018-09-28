@@ -45,7 +45,8 @@ def make_cluster(config)
   # use a minimal amount of RAM for each node to avoid overwhelming the host
   config.vm.provider "libvirt" do |v|
     v.memory = 256
-    v.cpus = 1
+    # have multiple CPUs for testing ntasks-per-node > 1
+    v.cpus = 4
   end
 
   config.vm.network "private_network", type: "dhcp"
